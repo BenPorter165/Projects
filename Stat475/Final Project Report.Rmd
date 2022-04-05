@@ -1,0 +1,246 @@
+---
+title: "Final Project Report"
+author: "Ben Porter"
+date: "12/15/2021"
+output: github_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(GGally)
+library(mvShapiroTest)
+library(DescTools)
+library(reshape2)
+library(biotools)
+library(car)
+
+sampledata <- read.csv("sample-data.csv")
+sampledata1 <- sampledata
+
+sampledata1$Date = as.factor(sampledata1$Date)
+sampledata1$Continent = as.factor(sampledata1$Continent)
+sampledata1$status = as.factor(sampledata1$status)
+
+
+
+summary(sampledata1)
+
+ggpairs(sampledata1[4:24])
+
+```
+
+a.
+
+Research Question 1: 
+What is the development status of a country dependent on?
+
+Research Question 2: 
+How many clusters can we separate our data into?
+
+Research Question 3: 
+Can we train a model to predict the development status of a country accurately based on our data?
+
+c.
+```{r}
+# Box plots only for continuous variables
+sampledata2 <- subset(sampledata1, select = c(5, 6, 7, 8, 12, 13, 14, 15, 16, 18, 20, 21, 22, 24))
+summary(sampledata2)
+
+col.continuous <- c(5, 6, 7, 8, 12, 13, 14, 15, 16, 18, 20, 21, 22)
+qplot(status, value, data = melt(sampledata1, id.vars = 24, measure.vars = col.continuous),
+      geom = "boxplot", na.rm = T) +
+  facet_wrap("variable", nrow = 2, scales = "free_y") +
+  labs(x = "result", y = NULL)
+```
+
+Variables of Interest Based on Research Questions and Significance:
+
+Corruption.Index
+
+Annual.GDP and GDP.per.capita
+
+Debt and Debt.Per.Capita
+
+Exports and Exports.per.GDP
+
+Imports and Imports.per.GDP
+
+Fertility.Rate
+
+HDI
+
+Life.expectancy
+
+CO2.Tons.per.capita
+
+status
+
+
+f.
+Data Visualization
+```{r}
+col.continuous <- c(5, 6, 7, 8, 12, 13, 14, 15, 16, 18, 20, 21, 22)
+qplot(status, value, data = melt(sampledata1, id.vars = 24, measure.vars = col.continuous),
+      geom = "boxplot", na.rm = T) +
+  facet_wrap("variable", nrow = 2, scales = "free_y") +
+  labs(x = "result", y = NULL)
+
+ggpairs(sampledata2)
+```
+
+
+
+g.
+Hierarchical Clustering
+```{r}
+library(fpc)
+library(plyr)
+library(reshape)
+library(vegan)
+
+sdata.euc.dist <- vegdist(sampledata2[1:13], method="euclidean")
+
+sdata.euc.clust <- hclust(sdata.euc.dist, method="ward.D2")
+
+# Plot within/between ratios against number of clusters
+sdata.euc.ratio <- sapply(2:10, function(x) {
+  cluster.stats(sdata.euc.dist, clustering = cutree(sdata.euc.clust, x))$wb.ratio
+})
+qplot(2:10, sdata.euc.ratio, geom = c("point", "line"),
+      xlab = "Number of Clusters", ylab = "Within/Between Ratio", main = "Euclidean Distance (Ward's Method)")
+
+# Plot Calinski-Harabasz index against number of clusters
+sdata.euc.ch <- sapply(2:10, function(x) {
+  cluster.stats(sdata.euc.dist, clustering = cutree(sdata.euc.clust, x))$ch
+})
+qplot(2:10, sdata.euc.ch, geom = c("point", "line"),
+      xlab = "Number of Clusters", ylab = "ch Index", main = "Euclidean Distance (Ward's Method)")
+
+sampledata2$cl.euc <- cutree(sdata.euc.clust, 5)
+
+plotcluster(sampledata2[ ,1:13], sampledata2$cl.euc, method="dc")
+
+```
+
+A good number of clusters for this data is 5 because that is where the second elbow is located on the Within/Between Ratio graph and 5 is where the first peak is located on the ch Index.
+
+
+h.
+LDA
+```{r}
+sdata.lda <- lda(status ~ Annual.GDP + GDP.per.capita + Debt + Debt.Per.Capita + Corruption.Index + Exports + Exports...GDP + Imports + Imports...GDP + Fertility.Rate + HDI + Life.expectancy + CO2.Tons.per.capita,
+                 data = sampledata2, prior = c(.15, .85), CV = F) 
+
+predict(sdata.lda)$class
+
+table(sampledata2$status, predict(sdata.lda)$class)
+
+mean(sampledata2$status != predict(sdata.lda)$class)
+
+
+```
+
+Error rate is 7.24%. There are 31 miss-classified developed countries and 58 miss-classified developing countries.
+
+
+QDA
+```{r}
+#qda
+sdata.qda <- qda(status ~ Annual.GDP + GDP.per.capita + Debt + Debt.Per.Capita + Corruption.Index + Exports + Exports...GDP + Imports + Imports...GDP + Fertility.Rate + HDI + Life.expectancy + CO2.Tons.per.capita,
+                 data = sampledata2, prior = c(.15, .85), CV = F)  
+
+predict(sdata.qda)$class
+
+table(sampledata2$status, predict(sdata.qda)$class)
+
+mean(sampledata2$status != predict(sdata.qda)$class)  
+
+```
+
+Error rate is 6.26%. 18 miss-classified developed countries and 59 miss-classified developing countries.
+
+QDA is better than LDA in terms of training error because it has a lower error rate.
+
+i.
+
+Test for Normality
+```{r}
+developing <- sampledata2[sampledata2[,14]=="Developing", -14]
+developed <- sampledata2[sampledata2[,14]=="Developed", -14]
+
+mvShapiro.Test(as.matrix(developing[1:13]))
+mvShapiro.Test(as.matrix(developed[1:13]))
+
+```
+
+developing p-value: < 2.2e-16
+
+developed p-value: < 2.2e-16
+
+With all p-values < 0.05, we reject the null hypothesis, so each status is not from a multivariate normal distribution.
+
+We should take caution when using MANOVA because of the lack of normality, but this does not make MANOVA invalid.
+
+
+
+MANOVA
+```{r}
+fit.lm <- lm(cbind(Annual.GDP, GDP.per.capita, Debt, Debt.Per.Capita, Corruption.Index, Exports, Exports...GDP, Imports, Imports...GDP, Fertility.Rate, HDI, Life.expectancy, CO2.Tons.per.capita) ~ status, data = sampledata2)
+summary(Manova(fit.lm))
+```
+
+Wilks test statistic: 0.3297165
+
+F: 190.1551
+
+p-value: 2.22e-16
+
+p-value < 0.05, reject H0. At least two groups have different population means between the 13 variables.
+
+
+PCA for developing countries
+```{r}
+developingpc <- prcomp(developing[1:13], scale = T, center = T)
+summary(developingpc)
+
+print(developingpc)
+
+qplot(1:13, developingpc$sdev ^ 2, geom = c("point", "line"),
+      xlab = "No. of PCs", ylab = "Component Variance (eigenvalue)", main = "Scree Plot")
+```
+
+3 PCs should be enough because that is where the first elbow is located on the scree plot and 3 PCs cover 74% of the variation.
+
+PC1: The average of Annual.GDP, GDP.per.capita, Debt, Debt.Per.Capita, Corruption.Index, Exports, Exports...GDP, Imports, Imports...GDP, Fertility.Rate, HDI, Life.expectancy, CO2.Tons.per.capita minus Fertility.Rate for developed countries.
+
+PC2: The average of Annual.GDP, Debt, Exports, and Imports minus the average GDP.per.capita, Debt.Per.Capita, Corruption.Index, Exports...GDP, and Imports...GDP for developing countries.
+
+PC3: The average of Annual.GDP, HDI, Life.expectancy, and CO2.Tons.per.capita   minus the average Exports, Exports...GDP, Imports, Imports...GDP, and Fertility.Rate for developing countries.
+
+
+PCA for developed countries
+```{r}
+developedpc <- prcomp(developed[1:13], scale = T, center = T)
+summary(developedpc)
+
+print(developedpc)
+
+qplot(1:13, developedpc$sdev ^ 2, geom = c("point", "line"),
+      xlab = "No. of PCs", ylab = "Component Variance (eigenvalue)", main = "Scree Plot")
+```
+
+3 PCs should be enough because that is where the first elbow is located on the scree plot and 3 PCs cover 75% of the variation.
+
+PC1: The average of Annual.GDP, GDP.per.capita, Debt, Debt.Per.Capita, Corruption.Index, Exports, Imports, Fertility.Rate, HDI, Life.expectancy, CO2.Tons.per.capita, and Fertility.Rate minus Exports...GDP and Imports...GDP for developed countries.
+
+PC2: The average of GDP.per.capita, Corruption.Index, Fertility.Rate, HDI, and Life.expectancy minus the average Annual.GDP, Debt, Debt.Per.Capita, Exports, Imports for developed countries.
+
+PC3: The average of GDP.per.capita, Debt.Per.Capita, Exports, Exports...GDP, Imports, Imports...GDP, and HDI minus the average Life.expectancy for developed countries.
+
